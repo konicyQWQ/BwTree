@@ -32,10 +32,10 @@ impl<T> LockFreeList<T> {
         }
     }
 
-    pub fn iter(&self) -> Iter<'_, T> {
-        let guard = epoch::pin();
+    pub fn iter_with_guard<'a>(&self, guard: &'a Guard) -> Iter<'a, T> {
+        let next = Some(self.head.load(Acquire, &guard));
         Iter {
-            next: Some(self.head.load(Acquire, &guard)),
+            next,
             guard,
         }
     }
@@ -57,7 +57,7 @@ impl<T> Node<T> {
 
 pub struct Iter<'a, T> {
     next: Option<Shared<'a, Node<T>>>,
-    guard: Guard,
+    guard: &'a Guard,
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
@@ -67,7 +67,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
         match self.next {
             Some(node) => {
                 let node_ref = unsafe { node.as_ref()? };
-                self.next = Some(node_ref.next.load(Acquire, &self.guard));
+                self.next = Some(node_ref.next.load(Acquire, self.guard));
                 Some(&node_ref.value)
             }
             None => None,
@@ -97,9 +97,9 @@ mod test {
             assert!(handle.join().is_ok());
         }
 
-        for number in list.iter() {
+        let guard = epoch::pin();
+        for number in list.iter_with_guard(&guard) {
             assert!(*number < 200, "unexpected number {}", *number);
-            println!("{}", number);
         }
     }
 }
