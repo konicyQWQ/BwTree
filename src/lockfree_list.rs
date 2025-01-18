@@ -1,45 +1,105 @@
-use std::sync::atomic::{AtomicPtr, Ordering};
+use crossbeam::epoch::{self, Atomic, Guard, Owned, Shared};
+use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
-pub struct LockfreeList<T> {
-    head: AtomicPtr<Node<T>>,
+pub struct LockFreeList<T> {
+    head: Atomic<Node<T>>,
 }
 
-impl<T> LockfreeList<T> {
+impl<T> LockFreeList<T> {
     pub fn new() -> Self {
-        LockfreeList {
-            head: AtomicPtr::new(std::ptr::null_mut()),
+        LockFreeList {
+            head: Atomic::null(),
         }
     }
 
     pub fn push_front(&self, value: T) {
-        let node = Box::into_raw(Box::new(Node::new(value)));
-
+        let guard = &epoch::pin();
+        let mut current = self.head.load(Relaxed, guard);
+        let mut node = Owned::new(Node::new(value));
         loop {
-            let current = self.head.load(Ordering::Relaxed);
+            node.next.store(current, Relaxed);
 
-            unsafe { (*node).next.store(current, Ordering::Relaxed) };
-
-            if self
+            match self
                 .head
-                .compare_exchange_weak(current, node, Ordering::SeqCst, Ordering::Relaxed)
-                .is_ok()
+                .compare_exchange_weak(current, node, Release, Relaxed, guard)
             {
-                break;
+                Ok(_) => break,
+                Err(err) => {
+                    current = err.current;
+                    node = err.new;
+                }
             }
+        }
+    }
+
+    pub fn iter(&self) -> Iter<'_, T> {
+        let guard = epoch::pin();
+        Iter {
+            next: Some(self.head.load(Acquire, &guard)),
+            guard,
         }
     }
 }
 
 pub struct Node<T> {
     value: T,
-    next: AtomicPtr<Node<T>>,
+    next: Atomic<Node<T>>,
 }
 
 impl<T> Node<T> {
     fn new(value: T) -> Self {
         Node {
             value,
-            next: AtomicPtr::new(std::ptr::null_mut()),
+            next: Atomic::null(),
+        }
+    }
+}
+
+pub struct Iter<'a, T> {
+    next: Option<Shared<'a, Node<T>>>,
+    guard: Guard,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next {
+            Some(node) => {
+                let node_ref = unsafe { node.as_ref()? };
+                self.next = Some(node_ref.next.load(Acquire, &self.guard));
+                Some(&node_ref.value)
+            }
+            None => None,
+        }
+    }
+}
+
+mod test {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_push_correct() {
+        let list = Arc::new(LockFreeList::new());
+        let ranges = vec![0..100, 100..200];
+
+        let handles = ranges.into_iter().map(|range| {
+            let list = list.clone();
+            std::thread::spawn(move || {
+                for i in range {
+                    list.push_front(i);
+                }
+            })
+        }).collect::<Vec<_>>();
+
+        for handle in handles {
+            assert!(handle.join().is_ok());
+        }
+
+        for number in list.iter() {
+            assert!(*number < 200, "unexpected number {}", *number);
+            println!("{}", number);
         }
     }
 }
