@@ -34,10 +34,7 @@ impl<T> LockFreeList<T> {
 
     pub fn iter_with_guard<'a>(&self, guard: &'a Guard) -> Iter<'a, T> {
         let next = Some(self.head.load(Acquire, &guard));
-        Iter {
-            next,
-            guard,
-        }
+        Iter { next, guard }
     }
 }
 
@@ -84,14 +81,17 @@ mod test {
         let list = Arc::new(LockFreeList::new());
         let ranges = vec![0..100, 100..200];
 
-        let handles = ranges.into_iter().map(|range| {
-            let list = list.clone();
-            std::thread::spawn(move || {
-                for i in range {
-                    list.push_front(i);
-                }
+        let handles = ranges
+            .into_iter()
+            .map(|range| {
+                let list = list.clone();
+                std::thread::spawn(move || {
+                    for i in range {
+                        list.push_front(i);
+                    }
+                })
             })
-        }).collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
         for handle in handles {
             assert!(handle.join().is_ok());
