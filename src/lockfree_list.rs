@@ -1,5 +1,6 @@
 use crossbeam::epoch::{self, Atomic, Guard, Owned, Shared};
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
+use crate::errors::error::{LockfreeListError};
 
 pub struct LockFreeList<T> {
     head: Atomic<Node<T>>,
@@ -12,7 +13,7 @@ impl<T> LockFreeList<T> {
         }
     }
 
-    pub fn push_front(&self, value: T) {
+    pub fn push_front(&self, value: T) -> Result<(), anyhow::Error> {
         let guard = &epoch::pin();
         let mut current = self.head.load(Relaxed, guard);
         let mut node = Owned::new(Node::new(value));
@@ -30,6 +31,8 @@ impl<T> LockFreeList<T> {
                 }
             }
         }
+        // TODO 这里可能出错的吧
+        Ok(())
     }
 
     pub fn iter_with_guard<'a>(&self, guard: &'a Guard) -> Iter<'a, T> {
@@ -38,7 +41,7 @@ impl<T> LockFreeList<T> {
     }
 }
 
-pub struct Node<T> {
+ struct Node<T> {
     value: T,
     next: Atomic<Node<T>>,
 }
@@ -87,7 +90,7 @@ mod test {
                 let list = list.clone();
                 std::thread::spawn(move || {
                     for i in range {
-                        list.push_front(i);
+                        let _ = list.push_front(i);
                     }
                 })
             })

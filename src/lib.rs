@@ -1,3 +1,4 @@
+mod errors;
 mod lockfree_list;
 mod mapping_table;
 mod nodes;

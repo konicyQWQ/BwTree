@@ -21,25 +21,26 @@ impl<K, V> BwTree<K, V>
 where
     K: HasMinimum + Ord,
 {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, anyhow::Error> {
         let mapping_table = MappingTable::new();
-        let root_id = mapping_table.new_page();
+        let root_id = mapping_table.new_page()?;
         let root = Node::Leaf(LeafNode::new());
 
-        mapping_table.get(root_id).push_front(root);
+        mapping_table.get(root_id).push_front(root)?;
 
-        Self {
+        Ok(Self {
             root_id,
             mapping_table,
-        }
+        })
     }
 
-    pub fn insert(&self, key: K, value: V) {
+    pub fn insert(&self, key: K, value: V) -> Result<(), anyhow::Error> {
         let node = Node::Delta(DeltaNode::Insert(InsertDelta::new(key, value)));
 
         // TODO: check whether node is inner node
         let root_list = self.mapping_table.get(self.root_id);
-        root_list.push_front(node);
+        root_list.push_front(node)?;
+        Ok(())
     }
 
     pub fn get<'a>(&'a self, key: &K, guard: &'a Guard) -> Option<&V> {
@@ -84,28 +85,30 @@ where
 }
 
 mod tests {
-    use crossbeam::epoch;
     use super::*;
+    use crossbeam::epoch;
 
     impl HasMinimum for i32 {
         const MINIMUM: i32 = i32::MIN;
     }
 
     #[test]
-    fn test_insert_get() {
-        let bw_tree = BwTree::new();
+    fn test_insert_get() -> Result<(), anyhow::Error> {
+        let bw_tree = BwTree::new()?;
 
         let guard = epoch::pin();
-        bw_tree.insert(1, 2);
-        bw_tree.insert(2, 4);
+        bw_tree.insert(1, 2)?;
+        bw_tree.insert(2, 4)?;
 
         assert_eq!(bw_tree.get(&1, &guard), Some(&2));
         assert_eq!(bw_tree.get(&2, &guard), Some(&4));
         assert_eq!(bw_tree.get(&3, &guard), None);
 
-        bw_tree.insert(3, 6);
+        bw_tree.insert(3, 6)?;
         assert_eq!(bw_tree.get(&1, &guard), Some(&2));
         assert_eq!(bw_tree.get(&2, &guard), Some(&4));
         assert_eq!(bw_tree.get(&3, &guard), Some(&6));
+
+        Ok(())
     }
 }
