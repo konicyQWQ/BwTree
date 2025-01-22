@@ -34,9 +34,12 @@ where
     }
 
     pub fn new_page(&self) -> Result<usize, anyhow::Error> {
-        if self.next_id.load(Relaxed) >= MAPPING_TABLE_SIZE {
-            return Err(MappingTableError::NewPageError(1 + self.next_id.load(Relaxed)).into());
+        let page = self.next_id.fetch_add(1, Relaxed);
+        if page >= MAPPING_TABLE_SIZE {
+            // TODO: fix inc self.next_id
+            Err(MappingTableError::NewPageError(page).into())
+        } else {
+            Ok(page)
         }
-        Ok(self.next_id.fetch_add(1, Relaxed))
     }
 }

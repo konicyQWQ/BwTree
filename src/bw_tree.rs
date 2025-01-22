@@ -26,7 +26,7 @@ where
         let root_id = mapping_table.new_page()?;
         let root = Node::Leaf(LeafNode::new());
 
-        mapping_table.get(root_id).push_front(root)?;
+        mapping_table.get(root_id).push_front(root);
 
         Ok(Self {
             root_id,
@@ -39,7 +39,7 @@ where
 
         // TODO: check whether node is inner node
         let root_list = self.mapping_table.get(self.root_id);
-        root_list.push_front(node)?;
+        root_list.push_front(node);
         Ok(())
     }
 
