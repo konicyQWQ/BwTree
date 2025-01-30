@@ -36,9 +36,36 @@ impl<T> LockFreeList<T> {
         let next = Some(self.head.load(Acquire, &guard));
         Iter { next, guard }
     }
+
+    pub fn replace(&self, f: impl Fn(&Self) -> T, guard: &Guard) {
+        let mut current = self.head.load(Acquire, &guard);
+        loop {
+            let new_node = Owned::new(Node::new(f(self)));
+
+            match self
+                .head
+                .compare_exchange_weak(current, new_node, Release, Relaxed, guard)
+            {
+                Ok(old) => {
+                    Self::list_free(old, guard);
+                    break;
+                }
+                Err(err) => current = err.current,
+            }
+        }
+    }
+
+    fn list_free<'a>(mut list: Shared<'a, Node<T>>, guard: &'a Guard) {
+        unsafe {
+            while let Some(node_ref) = list.as_ref() {
+                guard.defer_destroy(list);
+                list = node_ref.next.load(Relaxed, guard);
+            }
+        }
+    }
 }
 
- struct Node<T> {
+struct Node<T> {
     value: T,
     next: Atomic<Node<T>>,
 }

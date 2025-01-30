@@ -1,6 +1,6 @@
 pub struct InsertDelta<K, V> {
-    key: K,
-    value: V,
+    pub key: K,
+    pub value: V,
 }
 
 impl<K, V> InsertDelta<K, V>

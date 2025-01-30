@@ -9,7 +9,7 @@ pub mod leaf_node;
 
 pub enum Node<K, V>
 where
-    K: HasMinimum + Ord,
+    K: HasMinimum + Ord + Clone,
 {
     Leaf(LeafNode<K, V>),
     Delta(DeltaNode<K, V>),

@@ -9,7 +9,7 @@ const MAPPING_TABLE_SIZE: usize = 1 << 20;
 
 pub struct MappingTable<K, V>
 where
-    K: Ord + HasMinimum,
+    K: Ord + HasMinimum + Clone,
 {
     map: Vec<LockFreeList<Node<K, V>>>,
     next_id: AtomicUsize,
@@ -17,7 +17,7 @@ where
 
 impl<K, V> MappingTable<K, V>
 where
-    K: Ord + HasMinimum,
+    K: Ord + HasMinimum + Clone,
 {
     pub fn new() -> Self {
         Self {
