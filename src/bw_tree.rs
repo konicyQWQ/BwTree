@@ -1,6 +1,6 @@
 use crate::lockfree_list::LockFreeList;
 use crate::mapping_table::MappingTable;
-use crate::nodes::delta_node::{DeltaNode, InsertDelta};
+use crate::nodes::delta_node::{DeltaGetResult, DeltaNode, InsertDelta};
 use crate::nodes::leaf_node::{LeafNode, LeafNodeBuilder};
 use crate::nodes::Node;
 use crossbeam::epoch;
@@ -53,8 +53,9 @@ where
                     node_list = self.mapping_table.get(id);
                 }
                 TreeSearch::Val(val) => {
-                    return val;
+                    return Some(val);
                 }
+                TreeSearch::NoneVal => return None,
             }
         }
     }
@@ -91,22 +92,26 @@ where
 
 pub enum TreeSearch<'a, V> {
     NextNode(usize),
-    Val(Option<&'a V>),
+    Val(&'a V),
+    NoneVal,
 }
 
 impl<K, V> LockFreeList<Node<K, V>>
 where
     K: Ord + HasMinimum + Clone,
 {
-    pub fn get<'a>(&'a self, key: &K, guard: &'a Guard) -> TreeSearch<'_, V> {
+    pub fn get<'a>(&'a self, key: &K, guard: &'a Guard) -> TreeSearch<'a, V> {
         for node in self.iter_with_guard(guard) {
             match node {
-                Node::Delta(delta_node) => {
-                    if let Some(v) = delta_node.get(key) {
-                        return TreeSearch::Val(v);
-                    }
-                }
-                Node::Leaf(leaf_node) => return TreeSearch::Val(leaf_node.get(key)),
+                Node::Delta(delta_node) => match delta_node.get(key) {
+                    DeltaGetResult::Found(v) => return TreeSearch::Val(v),
+                    DeltaGetResult::NoneValue => return TreeSearch::NoneVal,
+                    _ => continue,
+                },
+                Node::Leaf(leaf_node) => match leaf_node.get(key) {
+                    Some(v) => return TreeSearch::Val(v),
+                    None => return TreeSearch::NoneVal,
+                },
                 Node::Inner(inner_node) => return TreeSearch::NextNode(inner_node.get(key)),
             }
         }

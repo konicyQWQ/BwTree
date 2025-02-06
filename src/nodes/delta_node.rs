@@ -45,18 +45,22 @@ pub enum DeltaNode<K, V> {
     Delete(DeleteDelta<K>),
 }
 
+pub enum DeltaGetResult<'a, V> {
+    KeyNotFound,
+    NoneValue,
+    Found(&'a V),
+}
+
 impl<K, V> DeltaNode<K, V>
 where
     K: Ord,
 {
-    /// None means not found
-    /// Some(None) means the val of key is None
-    /// Some(xxx) means the val of key is xxx
-    pub fn get(&self, key: &K) -> Option<Option<&V>> {
+    pub fn get(&self, key: &K) -> DeltaGetResult<'_, V> {
         match self {
-            DeltaNode::Insert(insert) => (insert.key == *key).then_some(Some(&insert.value)),
-            DeltaNode::Update(update) => (update.key == *key).then_some(Some(&update.value)),
-            DeltaNode::Delete(delete) => (delete.key == *key).then_some(None),
+            DeltaNode::Insert(insert) if insert.key == *key => DeltaGetResult::Found(&insert.value),
+            DeltaNode::Update(update) if update.key == *key => DeltaGetResult::Found(&update.value),
+            DeltaNode::Delete(delta) if delta.key == *key => DeltaGetResult::NoneValue,
+            _ => DeltaGetResult::KeyNotFound,
         }
     }
 }
