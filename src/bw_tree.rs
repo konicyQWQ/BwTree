@@ -1,6 +1,6 @@
 use crate::lockfree_list::LockFreeList;
 use crate::mapping_table::MappingTable;
-use crate::nodes::delta_node::{DeltaGetResult, DeltaNode, InsertDelta};
+use crate::nodes::delta_node::{DeleteDelta, DeltaGetResult, DeltaNode, InsertDelta};
 use crate::nodes::leaf_node::{LeafNode, LeafNodeBuilder};
 use crate::nodes::Node;
 use crossbeam::epoch;
@@ -45,6 +45,15 @@ where
         Ok(())
     }
 
+    pub fn delete(&self, key: K) -> Result<(), anyhow::Error> {
+        let node = Node::Delta(DeltaNode::Delete(DeleteDelta::new(key)));
+
+        // TODO: check whether node is inner node
+        let root_list = self.mapping_table.get(self.root_id);
+        root_list.push_front(node);
+        Ok(())
+    }
+
     pub fn get<'a>(&'a self, key: &K, guard: &'a Guard) -> Option<&V> {
         let mut node_list = self.mapping_table.get(self.root_id);
         loop {
@@ -70,11 +79,9 @@ where
                 }
                 Node::Inner(_) => todo!(),
                 Node::Delta(delta) => match delta {
-                    DeltaNode::Insert(delta) => {
-                        builder.add_delta(delta);
-                    }
+                    DeltaNode::Insert(delta) => builder.add_insert_delta(delta),
                     DeltaNode::Update(_) => todo!(),
-                    DeltaNode::Delete(_) => todo!(),
+                    DeltaNode::Delete(delta) => builder.add_delete_delta(delta),
                 },
             }
         }
@@ -170,6 +177,62 @@ mod tests {
         assert_eq!(bw_tree.get(&2, &guard), Some(&4));
         assert_eq!(bw_tree.get(&3, &guard), Some(&6));
         assert_eq!(bw_tree.get(&4, &guard), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete() -> Result<(), anyhow::Error> {
+        let bw_tree = BwTree::new()?;
+
+        let guard = epoch::pin();
+        bw_tree.insert(1, 2)?;
+        bw_tree.insert(2, 4)?;
+
+        assert_eq!(bw_tree.get(&1, &guard), Some(&2));
+        assert_eq!(bw_tree.get(&2, &guard), Some(&4));
+
+        bw_tree.delete(2)?;
+        assert_eq!(bw_tree.get(&1, &guard), Some(&2));
+        assert_eq!(bw_tree.get(&2, &guard), None);
+
+        bw_tree.insert(2, 6)?;
+        assert_eq!(bw_tree.get(&1, &guard), Some(&2));
+        assert_eq!(bw_tree.get(&2, &guard), Some(&6));
+
+        bw_tree.delete(1)?;
+        assert_eq!(bw_tree.get(&1, &guard), None);
+        assert_eq!(bw_tree.get(&2, &guard), Some(&6));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_consolidation() -> Result<(), anyhow::Error> {
+        let bw_tree = BwTree::new()?;
+
+        let guard = epoch::pin();
+        bw_tree.insert(1, 2)?;
+        bw_tree.insert(2, 4)?;
+
+        assert_eq!(bw_tree.get(&1, &guard), Some(&2));
+        assert_eq!(bw_tree.get(&2, &guard), Some(&4));
+
+        bw_tree.delete(2)?;
+        assert_eq!(bw_tree.get(&1, &guard), Some(&2));
+        assert_eq!(bw_tree.get(&2, &guard), None);
+
+        bw_tree.insert(2, 6)?;
+        assert_eq!(bw_tree.get(&1, &guard), Some(&2));
+        assert_eq!(bw_tree.get(&2, &guard), Some(&6));
+
+        bw_tree.delete(1)?;
+        assert_eq!(bw_tree.get(&1, &guard), None);
+        assert_eq!(bw_tree.get(&2, &guard), Some(&6));
+
+        bw_tree.consolidation(0);
+        assert_eq!(bw_tree.get(&1, &guard), None);
+        assert_eq!(bw_tree.get(&2, &guard), Some(&6));
 
         Ok(())
     }

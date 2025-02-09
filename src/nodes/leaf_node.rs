@@ -1,4 +1,5 @@
-use crate::nodes::delta_node::InsertDelta;
+use crate::nodes::delta_node::{DeleteDelta, InsertDelta};
+use std::collections::BTreeSet;
 
 #[derive(Clone)]
 pub struct LeafNode<K, V>
@@ -32,6 +33,8 @@ where
 {
     keys: Vec<K>,
     values: Vec<V>,
+    // TODO: HashSet?
+    delete_keys: BTreeSet<K>,
 }
 
 impl<K, V> LeafNodeBuilder<K, V>
@@ -43,6 +46,7 @@ where
         Self {
             keys: vec![],
             values: vec![],
+            delete_keys: BTreeSet::new(),
         }
     }
 
@@ -51,14 +55,25 @@ where
         self.values.push(value);
     }
 
-    pub fn add_delta(&mut self, delta: &InsertDelta<K, V>) {
-        self.keys.push(delta.key.clone());
-        self.values.push(delta.value.clone());
+    pub fn add_insert_delta(&mut self, delta: &InsertDelta<K, V>) {
+        if !self.delete_keys.contains(&delta.key) {
+            self.keys.push(delta.key.clone());
+            self.values.push(delta.value.clone());
+            self.delete_keys.insert(delta.key.clone());
+        }
+    }
+
+    pub fn add_delete_delta(&mut self, delta: &DeleteDelta<K>) {
+        self.delete_keys.insert(delta.key.clone());
     }
 
     pub fn add_node(&mut self, node: &LeafNode<K, V>) {
-        self.keys.append(&mut node.keys.clone());
-        self.values.append(&mut node.values.clone());
+        for (k, v) in node.keys.iter().zip(node.values.iter()) {
+            if !self.delete_keys.contains(k) {
+                self.keys.push(k.clone());
+                self.values.push(v.clone());
+            }
+        }
     }
 
     pub fn build(self) -> LeafNode<K, V> {

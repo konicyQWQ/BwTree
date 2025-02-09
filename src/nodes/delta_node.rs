@@ -27,7 +27,7 @@ where
 }
 
 pub struct DeleteDelta<K> {
-    key: K,
+    pub key: K,
 }
 
 impl<K> DeleteDelta<K>
